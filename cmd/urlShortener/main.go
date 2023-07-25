@@ -1,10 +1,15 @@
 package main
 
 import (
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/slavik22/urlShortener/internal/config"
+	"github.com/slavik22/urlShortener/internal/http-server/handlers/url/save"
+	"github.com/slavik22/urlShortener/internal/http-server/middleware/logger"
 	"github.com/slavik22/urlShortener/internal/lib/logger/sl"
 	"github.com/slavik22/urlShortener/internal/storage/sqlite"
 	"golang.org/x/exp/slog"
+	"net/http"
 	"os"
 )
 
@@ -30,6 +35,31 @@ func main() {
 	}
 
 	_ = storage
+
+	router := chi.NewRouter()
+
+	router.Use(middleware.RequestID)
+	router.Use(middleware.RealIP)
+	router.Use(logger.New(log))
+	router.Use(middleware.Recoverer)
+	router.Use(middleware.URLFormat)
+
+	router.Post("/url", save.New(log, storage))
+
+	log.Info("starting server", slog.String("address", cfg.Address))
+
+	srv := &http.Server{
+		Addr:         cfg.Address,
+		Handler:      router,
+		ReadTimeout:  cfg.HTTPServer.Timeout,
+		WriteTimeout: cfg.HTTPServer.Timeout,
+		IdleTimeout:  cfg.HTTPServer.IdleTimeout,
+	}
+	if err := srv.ListenAndServe(); err != nil {
+		log.Error("failed to start server")
+	}
+
+	log.Error("server stopped")
 }
 
 func setupLogger(env string) *slog.Logger {
